@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-drainer
+  namespace: kube-system
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: node-drainer
+subjects:
+- kind: ServiceAccount
+  name: node-drainer
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: itsre:node-drainer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: itsre:node-drainer
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/eviction", "nodes"]
+    verbs: ["create", "list", "patch", "get"]
+  - apiGroups: ["extensions"]
+    resources: [ "daemonsets" ]
+    verbs: ["get"]
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: node-drainer
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: node-drainer
+      name: node-drainer
+      namespace: node-drainer
+    spec:
+      serviceAccount: node-drainer
+      serviceAccountName: node-drainer
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      containers:
+        - name: node-drainer
+          image: limed/eks-node-drainer:latest
+          imagePullPolicy: Always
+          command:
+            - /usr/bin/lifecycled
+          args:
+            - "--handler=/handler.sh"
+            - "--json"
+          env:
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: node-drainer
+                  key: AWS_REGION
+            - name: LIFECYCLED_SNS_TOPIC
+              valueFrom:
+                configMapKeyRef:
+                  name: node-drainer
+                  key: LIFECYCLED_SNS_TOPIC
+            - name: LIFECYCLED_CLOUDWATCH_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: node-drainer
+                  key: LIFECYCLED_CLOUDWATCH_GROUP
+          resources:
+            limits:
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
